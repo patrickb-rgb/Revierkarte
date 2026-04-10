@@ -1,0 +1,22 @@
+{
+  "name": "Revierkarte",
+  "short_name": "Revierkarte",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#1f6feb",
+  "lang": "de",
+  "description": "Revierkarte mit swisstopo-Hintergrund und LV95-Markern",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiB2aWV3Qm94PSIwIDAgMTkyIDE5MiI+PHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSIzMiIgZmlsbD0iIzFmNmZlYiIvPjxyZWN0IHg9IjU2IiB5PSIzNiIgd2lkdGg9IjgwIiBoZWlnaHQ9IjY4IiBmaWxsPSIjZmYzMzMzIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjYiLz48cmVjdCB4PSI4NiIgeT0iMTA0IiB3aWR0aD0iMjAiIGhlaWdodD0iNTIiIGZpbGw9IiNmZjMzMzMiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iNiIvPjx0ZXh0IHg9Ijk2IiB5PSI3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjM2IiBmb250LXdlaWdodD0iNzAwIj5NPC90ZXh0Pjwvc3ZnPg==",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI+PHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIHJ4PSI4NCIgZmlsbD0iIzFmNmZlYiIvPjxyZWN0IHg9IjE0NCIgeT0iOTYiIHdpZHRoPSIyMjQiIGhlaWdodD0iMTgwIiBmaWxsPSIjZmYzMzMzIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjE4Ii8+PHJlY3QgeD0iMjM0IiB5PSIyNzYiIHdpZHRoPSI0NCIgaGVpZ2h0PSIxMzYiIGZpbGw9IiNmZjMzMzMiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMTgiLz48dGV4dCB4PSIyNTYiIHk9IjIwNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9Ijk2IiBmb250LXdlaWdodD0iNzAwIj5NPC90ZXh0Pjwvc3ZnPg==",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
