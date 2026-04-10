@@ -1015,7 +1015,7 @@ if (installBtn) {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/static/sw.js").catch((error) => {
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
       console.error("Service Worker konnte nicht registriert werden:", error);
     });
   });

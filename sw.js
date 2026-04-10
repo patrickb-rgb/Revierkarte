@@ -1,9 +1,9 @@
 const CACHE_NAME = "revierkarte-cache-v1";
 const APP_SHELL = [
   "/",
-  "/static/style.css",
-  "/static/app.js",
-  "/static/manifest.webmanifest"
+  "./style.css",
+  "./app.js",
+  "./manifest.webmanifest"
 ];
 
 self.addEventListener("install", (event) => {
