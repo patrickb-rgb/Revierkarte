@@ -39,6 +39,18 @@
       </div>
 
       <div class="panel-section">
+        <h2>Backup</h2>
+        <div class="button-grid">
+          <button id="exportJsonBtn">Marker exportieren</button>
+          <button id="importJsonBtn">Marker importieren</button>
+          <input id="importJsonInput" type="file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint">
+          Exportiert alle Marker als JSON-Datei oder importiert ein zuvor gesichertes Backup.
+        </p>
+      </div>
+
+      <div class="panel-section">
         <h2>Neuer Marker</h2>
         <label>Text</label>
         <input id="newText" type="text" value="M1">

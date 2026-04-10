@@ -10,6 +10,10 @@ const toggleCreateBtn = document.getElementById("toggleCreateBtn");
 const toggleMoveBtn = document.getElementById("toggleMoveBtn");
 const createSeriesBtn = document.getElementById("createSeriesBtn");
 
+const exportJsonBtn = document.getElementById("exportJsonBtn");
+const importJsonBtn = document.getElementById("importJsonBtn");
+const importJsonInput = document.getElementById("importJsonInput");
+
 const newText = document.getElementById("newText");
 const newColor = document.getElementById("newColor");
 const newFontSize = document.getElementById("newFontSize");
@@ -37,58 +41,47 @@ const markerFilterEl = document.getElementById("markerFilter");
 
 const exportAreaEl = document.getElementById("exportArea");
 const exportPdfBtn = document.getElementById("exportPdfBtn");
+
+const STORAGE_KEY = "revierkarte_markers_v1";
+const TILE_SIZE = 256;
+const MERCATOR_LIMIT = 20037508.342789244;
+
+let deferredPrompt = null;
+
 const EXPORT_AREAS = {
   "Killwangen": {
     topLeft: [2667121.422959819, 1253959.7345927265],
-    bottomRight: [2669119.7719010995, 1252106.2069397648],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2669119.7719010995, 1252106.2069397648]
   },
   "Remetschwil": {
     topLeft: [2667201.9893354657, 1252281.0968405611],
-    bottomRight: [2669259.2486057994, 1250738.2089206805],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2669259.2486057994, 1250738.2089206805]
   },
   "Spreitenbach-Nord": {
     topLeft: [2668060.254986482, 1253550.0026197082],
-    bottomRight: [2669812.898225366, 1251625.1331947674],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2669812.898225366, 1251625.1331947674]
   },
   "Spreitenbach-Süd": {
     topLeft: [2668243.84425783, 1252089.59135246],
-    bottomRight: [2671212.569289755, 1250585.7517191079],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2671212.569289755, 1250585.7517191079]
   },
   "Bellikon": {
     topLeft: [2667076.4939424605, 1250921.8050311094],
-    bottomRight: [2670012.1523289075, 1247439.3552220082],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2670012.1523289075, 1247439.3552220082]
   },
   "Bergdietikon-Nord": {
     topLeft: [2669231.651667507, 1250847.2904884377],
-    bottomRight: [2672321.3875823063, 1248593.9566039904],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2672321.3875823063, 1248593.9566039904]
   },
   "Bergdietikon-Süd": {
     topLeft: [2669652.0428149523, 1248706.5598144184],
-    bottomRight: [2672512.1580805406, 1247172.916863532],
-    orientation: "landscape",
-    zoombias: 3
+    bottomRight: [2672512.1580805406, 1247172.916863532]
   },
   "Revierkarte": {
     topLeft: [2665863.7398292096, 1253939.9619140048],
-    bottomRight: [2673141.04051996, 1246712.843765177],
-    orientation: "portrait",
-    zoombias: 3
+    bottomRight: [2673141.04051996, 1246712.843765177]
   }
 };
-
-let deferredPrompt = null;
 
 const state = {
   markers: [],
@@ -114,11 +107,11 @@ proj4.defs(
 );
 
 function setStatus(text) {
-  statusEl.textContent = text;
+  if (statusEl) statusEl.textContent = text;
 }
 
 function closeSidebarOnMobile() {
-  if (window.innerWidth <= 900) {
+  if (window.innerWidth <= 900 && sidebarEl) {
     sidebarEl.classList.remove("open");
   }
 }
@@ -136,9 +129,6 @@ function epsg3857ToLv95(x, y) {
   return proj4("EPSG:3857", "EPSG:2056", [x, y]);
 }
 
-const TILE_SIZE = 256;
-const MERCATOR_LIMIT = 20037508.342789244;
-
 function mercatorToPixel(mx, my, zoom) {
   const scale = TILE_SIZE * Math.pow(2, zoom);
   const px = ((mx + MERCATOR_LIMIT) / (2 * MERCATOR_LIMIT)) * scale;
@@ -146,7 +136,7 @@ function mercatorToPixel(mx, my, zoom) {
   return [px, py];
 }
 
-function chooseExportZoom(minX, minY, maxX, maxY, targetPxW = 2600, targetPxH = 1800, zoomBias = 0) {
+function chooseExportZoom(minX, minY, maxX, maxY, targetPxW = 4000, targetPxH = 3000, zoomBias = 1) {
   let chosen = 0;
 
   for (let zoom = 18; zoom >= 0; zoom--) {
@@ -164,237 +154,23 @@ function chooseExportZoom(minX, minY, maxX, maxY, targetPxW = 2600, targetPxH = 
   return Math.min(18, Math.max(0, chosen + zoomBias));
 }
 
-function loadTileImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`Tile konnte nicht geladen werden: ${url}`));
-    img.src = url;
-  });
-}
-
-function markerInArea(marker, area) {
-  const [e1, n1] = area.topLeft;
-  const [e2, n2] = area.bottomRight;
-
-  const minE = Math.min(e1, e2);
-  const maxE = Math.max(e1, e2);
-  const minN = Math.min(n1, n2);
-  const maxN = Math.max(n1, n2);
-
-  return (
-    marker.lv95_e >= minE &&
-    marker.lv95_e <= maxE &&
-    marker.lv95_n >= minN &&
-    marker.lv95_n <= maxN
-  );
-}
-
-async function buildAreaCanvas(areaName) {
-  const area = EXPORT_AREAS[areaName];
-  if (!area) {
-    throw new Error("Unbekannter Exportbereich.");
-  }
-
-  const [e1, n1] = area.topLeft;
-  const [e2, n2] = area.bottomRight;
-
-  const minE = Math.min(e1, e2);
-  const maxE = Math.max(e1, e2);
-  const minN = Math.min(n1, n2);
-  const maxN = Math.max(n1, n2);
-
-  const [minX, minY] = lv95To3857(minE, minN);
-  const [maxX, maxY] = lv95To3857(maxE, maxN);
-
-  const orientation = area.orientation || "landscape";
-  const targetPxW = orientation === "portrait" ? 1800 : 2600;
-  const targetPxH = orientation === "portrait" ? 2600 : 1800;
-  const zoomBias = Number(area.zoomBias || 0);
-
-  const zoom = chooseExportZoom(minX, minY, maxX, maxY, targetPxW, targetPxH, zoomBias);
-
-  const [px1, py1] = mercatorToPixel(minX, maxY, zoom);
-  const [px2, py2] = mercatorToPixel(maxX, minY, zoom);
-
-  const left = Math.min(px1, px2);
-  const right = Math.max(px1, px2);
-  const top = Math.min(py1, py2);
-  const bottom = Math.max(py1, py2);
-
-  const tileXMin = Math.floor(left / TILE_SIZE);
-  const tileXMax = Math.floor((right - 1) / TILE_SIZE);
-  const tileYMin = Math.floor(top / TILE_SIZE);
-  const tileYMax = Math.floor((bottom - 1) / TILE_SIZE);
-
-  const stitchedW = (tileXMax - tileXMin + 1) * TILE_SIZE;
-  const stitchedH = (tileYMax - tileYMin + 1) * TILE_SIZE;
-
-  const stitchedCanvas = document.createElement("canvas");
-  stitchedCanvas.width = stitchedW;
-  stitchedCanvas.height = stitchedH;
-  const stitchedCtx = stitchedCanvas.getContext("2d");
-
-  for (let tx = tileXMin; tx <= tileXMax; tx++) {
-    for (let ty = tileYMin; ty <= tileYMax; ty++) {
-      const url = `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/${zoom}/${tx}/${ty}.jpeg`;
-      const img = await loadTileImage(url);
-      stitchedCtx.drawImage(
-        img,
-        (tx - tileXMin) * TILE_SIZE,
-        (ty - tileYMin) * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE
-      );
-    }
-  }
-
-  const cropLeft = Math.round(left - tileXMin * TILE_SIZE);
-  const cropTop = Math.round(top - tileYMin * TILE_SIZE);
-  const cropWidth = Math.round(right - left);
-  const cropHeight = Math.round(bottom - top);
-
-  const cropCanvas = document.createElement("canvas");
-  cropCanvas.width = cropWidth;
-  cropCanvas.height = cropHeight;
-  const cropCtx = cropCanvas.getContext("2d");
-
-  cropCtx.drawImage(
-    stitchedCanvas,
-    cropLeft, cropTop, cropWidth, cropHeight,
-    0, 0, cropWidth, cropHeight
-  );
-
-  return {
-    canvas: cropCanvas,
-    meta: {
-      minE,
-      maxE,
-      minN,
-      maxN,
-      orientation,
-      zoom
-    }
-  };
-}
-
-function drawMarkersOnExportCanvas(canvas, areaName) {
-  const area = EXPORT_AREAS[areaName];
-  const [e1, n1] = area.topLeft;
-  const [e2, n2] = area.bottomRight;
-
-  const minE = Math.min(e1, e2);
-  const maxE = Math.max(e1, e2);
-  const minN = Math.min(n1, n2);
-  const maxN = Math.max(n1, n2);
-
-  const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
-
-  const eRange = maxE - minE;
-  const nRange = maxN - minN;
-
-  for (const marker of state.markers) {
-    if (!markerInArea(marker, area)) continue;
-
-    const x = ((marker.lv95_e - minE) / eRange) * width;
-    const y = ((maxN - marker.lv95_n) / nRange) * height;
-
-    const rectW = Math.max(20, Math.round(marker.rect_w || 50));
-    const rectH = Math.max(20, Math.round(marker.rect_h || 25));
-    const shaftW = 7;
-    const shaftH = 20;
-    const strokeW = 2;
-
-    const left = x - rectW / 2;
-    const top = y - shaftH - rectH;
-    const right = x + rectW / 2;
-    const bottom = y - shaftH;
-
-    ctx.fillStyle = marker.color || "#ff0000";
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = strokeW;
-
-    ctx.fillRect(left, top, rectW, rectH);
-    ctx.strokeRect(left, top, rectW, rectH);
-
-    ctx.fillRect(x - shaftW / 2, y - shaftH, shaftW, shaftH);
-    ctx.strokeRect(x - shaftW / 2, y - shaftH, shaftW, shaftH);
-
-    ctx.fillStyle = "#000000";
-    ctx.font = `700 ${Math.max(6, Number(marker.font_size) || 18)}px Arial`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(marker.text || "", x, top + rectH / 2);
-  }
-}
-
-async function exportPdf() {
-  try {
-    const areaName = exportAreaEl.value;
-    if (!areaName || !EXPORT_AREAS[areaName]) {
-      setStatus("Kein gültiger Exportbereich ausgewählt.");
-      return;
-    }
-
-    setStatus(`PDF wird erstellt: ${areaName} ...`);
-
-    const { jsPDF } = window.jspdf;
-    const { canvas, meta } = await buildAreaCanvas(areaName);
-
-    drawMarkersOnExportCanvas(canvas, areaName);
-
-    const pdfOrientation = meta.orientation === "portrait" ? "portrait" : "landscape";
-
-    const doc = new jsPDF({
-        orientation: pdfOrientation,
-        unit: "pt",
-        format: "a4"
-    });
-
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(18);
-    doc.text(areaName, pageW / 2, 28, { align: "center" });
-
-    const marginX = 36;
-    const topBand = 50;
-    const bottomBand = 36;
-
-    const usableW = pageW - marginX * 2;
-    const usableH = pageH - topBand - bottomBand;
-
-    const imgW = canvas.width;
-    const imgH = canvas.height;
-    const scale = Math.min(usableW / imgW, usableH / imgH);
-
-    const drawW = imgW * scale;
-    const drawH = imgH * scale;
-    const drawX = (pageW - drawW) / 2;
-    const drawY = bottomBand + (usableH - drawH) / 2;
-
-    const imgData = canvas.toDataURL("image/png", 0.95);
-    doc.addImage(imgData, "PNG", drawX, drawY, drawW, drawH);
-
-    const dateStr = new Date().toLocaleDateString("de-CH");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.text(dateStr, pageW / 2, pageH - 14, { align: "center" });
-
-    doc.save(`${areaName}.pdf`);
-    setStatus(`PDF exportiert: ${areaName}`);
-  } catch (error) {
-    console.error(error);
-    setStatus("PDF-Export fehlgeschlagen.");
-  }
-}
-
 function getSelectedMarker() {
   return state.markers.find((m) => m.id === state.selectedId) || null;
+}
+
+function normalizeMarkers(data) {
+  const markers = Array.isArray(data?.markers) ? data.markers : Array.isArray(data) ? data : [];
+  return markers.map((m, index) => ({
+    id: Number(m.id) || index + 1,
+    text: String(m.text || ""),
+    color: String(m.color || "#ff0000"),
+    font_size: safeNumber(m.font_size, 18),
+    rect_w: safeNumber(m.rect_w, 50),
+    rect_h: safeNumber(m.rect_h, 25),
+    lv95_e: safeNumber(m.lv95_e, 0),
+    lv95_n: safeNumber(m.lv95_n, 0),
+    description: String(m.description || "")
+  }));
 }
 
 function updateEditor() {
@@ -413,29 +189,29 @@ function updateEditor() {
     applyBtn,
     deleteBtn
   ].forEach((el) => {
-    el.disabled = disabled;
+    if (el) el.disabled = disabled;
   });
 
   if (!marker) {
-    editText.value = "";
-    editColor.value = "#ff0000";
-    editFontSize.value = "";
-    editWidth.value = "";
-    editHeight.value = "";
-    editEasting.value = "";
-    editNorthing.value = "";
-    editDescription.value = "";
+    if (editText) editText.value = "";
+    if (editColor) editColor.value = "#ff0000";
+    if (editFontSize) editFontSize.value = "";
+    if (editWidth) editWidth.value = "";
+    if (editHeight) editHeight.value = "";
+    if (editEasting) editEasting.value = "";
+    if (editNorthing) editNorthing.value = "";
+    if (editDescription) editDescription.value = "";
     return;
   }
 
-  editText.value = marker.text || "";
-  editColor.value = marker.color || "#ff0000";
-  editFontSize.value = marker.font_size ?? 18;
-  editWidth.value = marker.rect_w ?? 50;
-  editHeight.value = marker.rect_h ?? 25;
-  editEasting.value = marker.lv95_e ?? "";
-  editNorthing.value = marker.lv95_n ?? "";
-  editDescription.value = marker.description || "";
+  if (editText) editText.value = marker.text || "";
+  if (editColor) editColor.value = marker.color || "#ff0000";
+  if (editFontSize) editFontSize.value = marker.font_size ?? 18;
+  if (editWidth) editWidth.value = marker.rect_w ?? 50;
+  if (editHeight) editHeight.value = marker.rect_h ?? 25;
+  if (editEasting) editEasting.value = marker.lv95_e ?? "";
+  if (editNorthing) editNorthing.value = marker.lv95_n ?? "";
+  if (editDescription) editDescription.value = marker.description || "";
 }
 
 function markerSvg(marker, selected = false) {
@@ -522,16 +298,6 @@ function buildDivIcon(marker, selected = false) {
   });
 }
 
-function selectMarker(id) {
-  state.selectedId = id;
-  rebuildMarkers();
-}
-
-function clearSelection() {
-  state.selectedId = null;
-  rebuildMarkers();
-}
-
 function sortMarkers(markers) {
   return [...markers].sort((a, b) => {
     const ma = String(a.text || "").match(/^(\D*?)(\d+)?$/);
@@ -589,7 +355,27 @@ function renderMarkerList() {
   }
 }
 
+function selectMarker(id) {
+  state.selectedId = id;
+  rebuildMarkers();
+}
+
+function clearSelection() {
+  state.selectedId = null;
+  rebuildMarkers();
+}
+
+function autosaveMarkers() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ markers: state.markers }));
+  } catch (error) {
+    console.error("Autosave fehlgeschlagen:", error);
+  }
+}
+
 function rebuildMarkers() {
+  if (!state.map) return;
+
   state.leafletMarkers.forEach((markerObj) => {
     state.map.removeLayer(markerObj);
   });
@@ -621,6 +407,7 @@ function rebuildMarkers() {
       marker.lv95_n = n;
       state.selectedId = marker.id;
       rebuildMarkers();
+      autosaveMarkers();
       setStatus(`Marker „${marker.text}“ verschoben.`);
     });
 
@@ -633,34 +420,97 @@ function rebuildMarkers() {
 }
 
 async function loadMarkers() {
-  const response = await fetch("/api/markers");
-  if (!response.ok) {
-    throw new Error("Marker konnten nicht geladen werden.");
-  }
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
 
-  const data = await response.json();
-  state.markers = Array.isArray(data.markers) ? data.markers : [];
-  state.nextId = Math.max(1, ...state.markers.map((m) => Number(m.id) || 0)) + 1;
-  state.selectedId = null;
-  rebuildMarkers();
-  setStatus(`${state.markers.length} Marker geladen.`);
+    if (!raw) {
+      state.markers = [];
+      state.nextId = 1;
+      state.selectedId = null;
+      rebuildMarkers();
+      setStatus("Keine lokal gespeicherten Marker gefunden.");
+      return;
+    }
+
+    const data = JSON.parse(raw);
+    state.markers = normalizeMarkers(data);
+    state.nextId = Math.max(1, ...state.markers.map((m) => Number(m.id) || 0)) + 1;
+    state.selectedId = null;
+
+    rebuildMarkers();
+    setStatus(`${state.markers.length} Marker lokal geladen.`);
+  } catch (error) {
+    console.error(error);
+    setStatus("Lokale Marker konnten nicht geladen werden.");
+  }
 }
 
 async function saveMarkers() {
-  const response = await fetch("/api/markers", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ markers: state.markers })
-  });
-
-  if (!response.ok) {
-    setStatus("Speichern fehlgeschlagen.");
-    return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ markers: state.markers }));
+    setStatus("Marker lokal gespeichert.");
+  } catch (error) {
+    console.error(error);
+    setStatus("Lokales Speichern fehlgeschlagen.");
   }
+}
 
-  setStatus("Marker gespeichert.");
+function exportJsonBackup() {
+  try {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      version: 1,
+      markers: state.markers
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json"
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `revierkarte_backup_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setStatus("JSON-Backup exportiert.");
+  } catch (error) {
+    console.error(error);
+    setStatus("JSON-Export fehlgeschlagen.");
+  }
+}
+
+function importJsonBackup(file) {
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const importedMarkers = normalizeMarkers(parsed);
+
+      state.markers = importedMarkers;
+      state.nextId = Math.max(1, ...state.markers.map((m) => Number(m.id) || 0)) + 1;
+      state.selectedId = null;
+
+      rebuildMarkers();
+      autosaveMarkers();
+      setStatus(`${state.markers.length} Marker aus JSON importiert.`);
+    } catch (error) {
+      console.error(error);
+      setStatus("JSON-Import fehlgeschlagen.");
+    }
+  };
+
+  reader.onerror = () => {
+    setStatus("Datei konnte nicht gelesen werden.");
+  };
+
+  reader.readAsText(file, "utf-8");
 }
 
 function createMarkerAtLatLng(latlng) {
@@ -682,15 +532,16 @@ function createMarkerAtLatLng(latlng) {
   state.markers.push(marker);
   state.selectedId = marker.id;
   rebuildMarkers();
+  autosaveMarkers();
   setStatus(`Marker „${marker.text}“ erstellt.`);
 }
 
 function createSeriesMarkers() {
   if (!state.map) return;
 
-  const prefix = String(seriesPrefix.value || "").trim();
-  const start = Math.floor(safeNumber(seriesStart.value, 1));
-  const end = Math.floor(safeNumber(seriesEnd.value, 10));
+  const prefix = String(seriesPrefix?.value || "").trim();
+  const start = Math.floor(safeNumber(seriesStart?.value, 1));
+  const end = Math.floor(safeNumber(seriesEnd?.value, 10));
 
   if (start < 1 || end < 1 || end < start) {
     setStatus("Ungültiger Bereich für Serienmarker.");
@@ -753,6 +604,7 @@ function createSeriesMarkers() {
   }
 
   rebuildMarkers();
+  autosaveMarkers();
   setStatus(`${created.length} Serienmarker erstellt.`);
 }
 
@@ -770,6 +622,7 @@ function applyChanges() {
   marker.description = editDescription.value || "";
 
   rebuildMarkers();
+  autosaveMarkers();
 
   const [x3857, y3857] = lv95To3857(marker.lv95_e, marker.lv95_n);
   const ll = L.CRS.EPSG3857.unproject(L.point(x3857, y3857));
@@ -785,6 +638,7 @@ function deleteSelectedMarker() {
   state.markers = state.markers.filter((m) => m.id !== marker.id);
   state.selectedId = null;
   rebuildMarkers();
+  autosaveMarkers();
   setStatus("Marker gelöscht.");
 }
 
@@ -795,6 +649,7 @@ function clearMarkers() {
   state.markers = [];
   state.selectedId = null;
   rebuildMarkers();
+  autosaveMarkers();
   setStatus("Alle Marker gelöscht.");
 }
 
@@ -802,12 +657,16 @@ function toggleCreateMode() {
   state.createMode = !state.createMode;
   if (state.createMode && state.moveMode) {
     state.moveMode = false;
-    toggleMoveBtn.textContent = "Marker bewegen: AUS";
-    toggleMoveBtn.classList.remove("primary");
+    if (toggleMoveBtn) {
+      toggleMoveBtn.textContent = "Marker bewegen: AUS";
+      toggleMoveBtn.classList.remove("primary");
+    }
   }
 
-  toggleCreateBtn.textContent = `Marker setzen: ${state.createMode ? "EIN" : "AUS"}`;
-  toggleCreateBtn.classList.toggle("primary", state.createMode);
+  if (toggleCreateBtn) {
+    toggleCreateBtn.textContent = `Marker setzen: ${state.createMode ? "EIN" : "AUS"}`;
+    toggleCreateBtn.classList.toggle("primary", state.createMode);
+  }
   setStatus(state.createMode ? "Marker-Modus aktiv." : "Marker-Modus aus.");
 
   rebuildMarkers();
@@ -817,12 +676,16 @@ function toggleMoveMode() {
   state.moveMode = !state.moveMode;
   if (state.moveMode && state.createMode) {
     state.createMode = false;
-    toggleCreateBtn.textContent = "Marker setzen: AUS";
-    toggleCreateBtn.classList.remove("primary");
+    if (toggleCreateBtn) {
+      toggleCreateBtn.textContent = "Marker setzen: AUS";
+      toggleCreateBtn.classList.remove("primary");
+    }
   }
 
-  toggleMoveBtn.textContent = `Marker bewegen: ${state.moveMode ? "EIN" : "AUS"}`;
-  toggleMoveBtn.classList.toggle("primary", state.moveMode);
+  if (toggleMoveBtn) {
+    toggleMoveBtn.textContent = `Marker bewegen: ${state.moveMode ? "EIN" : "AUS"}`;
+    toggleMoveBtn.classList.toggle("primary", state.moveMode);
+  }
   setStatus(state.moveMode ? "Bewegungsmodus aktiv." : "Bewegungsmodus aus.");
 
   rebuildMarkers();
@@ -856,50 +719,308 @@ function setupMap() {
   });
 }
 
-menuBtn.addEventListener("click", () => {
-  sidebarEl.classList.toggle("open");
-});
+function loadTileImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Tile konnte nicht geladen werden: ${url}`));
+    img.src = url;
+  });
+}
 
-toggleCreateBtn.addEventListener("click", toggleCreateMode);
-toggleMoveBtn.addEventListener("click", toggleMoveMode);
-createSeriesBtn.addEventListener("click", createSeriesMarkers);
-loadBtn.addEventListener("click", loadMarkers);
-saveBtn.addEventListener("click", saveMarkers);
-clearBtn.addEventListener("click", clearMarkers);
-applyBtn.addEventListener("click", applyChanges);
-deleteBtn.addEventListener("click", deleteSelectedMarker);
+function markerInArea(marker, area) {
+  const [e1, n1] = area.topLeft;
+  const [e2, n2] = area.bottomRight;
 
-if (markerFilterEl) {
-  markerFilterEl.addEventListener("input", renderMarkerList);
+  const minE = Math.min(e1, e2);
+  const maxE = Math.max(e1, e2);
+  const minN = Math.min(n1, n2);
+  const maxN = Math.max(n1, n2);
+
+  return (
+    marker.lv95_e >= minE &&
+    marker.lv95_e <= maxE &&
+    marker.lv95_n >= minN &&
+    marker.lv95_n <= maxN
+  );
+}
+
+async function buildAreaCanvas(areaName) {
+  const area = EXPORT_AREAS[areaName];
+  if (!area) {
+    throw new Error("Unbekannter Exportbereich.");
+  }
+
+  const [e1, n1] = area.topLeft;
+  const [e2, n2] = area.bottomRight;
+
+  const minE = Math.min(e1, e2);
+  const maxE = Math.max(e1, e2);
+  const minN = Math.min(n1, n2);
+  const maxN = Math.max(n1, n2);
+
+  const [minX, minY] = lv95To3857(minE, minN);
+  const [maxX, maxY] = lv95To3857(maxE, maxN);
+
+  const zoom = chooseExportZoom(minX, minY, maxX, maxY, 4000, 3000, 1);
+
+  const [px1, py1] = mercatorToPixel(minX, maxY, zoom);
+  const [px2, py2] = mercatorToPixel(maxX, minY, zoom);
+
+  const left = Math.min(px1, px2);
+  const right = Math.max(px1, px2);
+  const top = Math.min(py1, py2);
+  const bottom = Math.max(py1, py2);
+
+  const tileXMin = Math.floor(left / TILE_SIZE);
+  const tileXMax = Math.floor((right - 1) / TILE_SIZE);
+  const tileYMin = Math.floor(top / TILE_SIZE);
+  const tileYMax = Math.floor((bottom - 1) / TILE_SIZE);
+
+  const stitchedW = (tileXMax - tileXMin + 1) * TILE_SIZE;
+  const stitchedH = (tileYMax - tileYMin + 1) * TILE_SIZE;
+
+  const stitchedCanvas = document.createElement("canvas");
+  stitchedCanvas.width = stitchedW;
+  stitchedCanvas.height = stitchedH;
+  const stitchedCtx = stitchedCanvas.getContext("2d");
+
+  for (let tx = tileXMin; tx <= tileXMax; tx++) {
+    for (let ty = tileYMin; ty <= tileYMax; ty++) {
+      const url = `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/${zoom}/${tx}/${ty}.jpeg`;
+      const img = await loadTileImage(url);
+      stitchedCtx.drawImage(
+        img,
+        (tx - tileXMin) * TILE_SIZE,
+        (ty - tileYMin) * TILE_SIZE,
+        TILE_SIZE,
+        TILE_SIZE
+      );
+    }
+  }
+
+  const cropLeft = Math.round(left - tileXMin * TILE_SIZE);
+  const cropTop = Math.round(top - tileYMin * TILE_SIZE);
+  const cropWidth = Math.round(right - left);
+  const cropHeight = Math.round(bottom - top);
+
+  const cropCanvas = document.createElement("canvas");
+  cropCanvas.width = cropWidth;
+  cropCanvas.height = cropHeight;
+  const cropCtx = cropCanvas.getContext("2d");
+
+  cropCtx.drawImage(
+    stitchedCanvas,
+    cropLeft, cropTop, cropWidth, cropHeight,
+    0, 0, cropWidth, cropHeight
+  );
+
+  return {
+    canvas: cropCanvas,
+    meta: {
+      minE,
+      maxE,
+      minN,
+      maxN,
+      zoom
+    }
+  };
+}
+
+function drawMarkersOnExportCanvas(canvas, areaName) {
+  const area = EXPORT_AREAS[areaName];
+  const [e1, n1] = area.topLeft;
+  const [e2, n2] = area.bottomRight;
+
+  const minE = Math.min(e1, e2);
+  const maxE = Math.max(e1, e2);
+  const minN = Math.min(n1, n2);
+  const maxN = Math.max(n1, n2);
+
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+
+  const eRange = maxE - minE;
+  const nRange = maxN - minN;
+
+  for (const marker of state.markers) {
+    if (!markerInArea(marker, area)) continue;
+
+    const x = ((marker.lv95_e - minE) / eRange) * width;
+    const y = ((maxN - marker.lv95_n) / nRange) * height;
+
+    const rectW = Math.max(20, Math.round(marker.rect_w || 50));
+    const rectH = Math.max(20, Math.round(marker.rect_h || 25));
+    const shaftW = 7;
+    const shaftH = 20;
+    const strokeW = 2;
+
+    const left = x - rectW / 2;
+    const top = y - shaftH - rectH;
+
+    ctx.fillStyle = marker.color || "#ff0000";
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = strokeW;
+
+    ctx.fillRect(left, top, rectW, rectH);
+    ctx.strokeRect(left, top, rectW, rectH);
+
+    ctx.fillRect(x - shaftW / 2, y - shaftH, shaftW, shaftH);
+    ctx.strokeRect(x - shaftW / 2, y - shaftH, shaftW, shaftH);
+
+    ctx.fillStyle = "#000000";
+    ctx.font = `700 ${Math.max(6, Number(marker.font_size) || 18)}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(marker.text || "", x, top + rectH / 2);
+  }
+}
+
+async function exportPdf() {
+  try {
+    const areaName = exportAreaEl?.value;
+    if (!areaName || !EXPORT_AREAS[areaName]) {
+      setStatus("Kein gültiger Exportbereich ausgewählt.");
+      return;
+    }
+
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      setStatus("PDF-Bibliothek nicht geladen.");
+      return;
+    }
+
+    setStatus(`PDF wird erstellt: ${areaName} ...`);
+
+    const { jsPDF } = window.jspdf;
+    const { canvas } = await buildAreaCanvas(areaName);
+    drawMarkersOnExportCanvas(canvas, areaName);
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "pt",
+      format: "a4"
+    });
+
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(areaName, pageW / 2, 28, { align: "center" });
+
+    const marginX = 36;
+    const topBand = 50;
+    const bottomBand = 36;
+
+    const usableW = pageW - marginX * 2;
+    const usableH = pageH - topBand - bottomBand;
+
+    const imgW = canvas.width;
+    const imgH = canvas.height;
+    const scale = Math.min(usableW / imgW, usableH / imgH);
+
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const drawX = (pageW - drawW) / 2;
+    const drawY = bottomBand + (usableH - drawH) / 2;
+
+    const imgData = canvas.toDataURL("image/png");
+    doc.addImage(imgData, "PNG", drawX, drawY, drawW, drawH);
+
+    const dateStr = new Date().toLocaleDateString("de-CH");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(dateStr, pageW / 2, pageH - 14, { align: "center" });
+
+    doc.save(`${areaName}.pdf`);
+    setStatus(`PDF exportiert: ${areaName}`);
+  } catch (error) {
+    console.error(error);
+    setStatus("PDF-Export fehlgeschlagen.");
+  }
+}
+
+function populateExportAreas() {
+  if (!exportAreaEl) return;
+
+  const current = exportAreaEl.value;
+  exportAreaEl.innerHTML = "";
+
+  for (const areaName of Object.keys(EXPORT_AREAS)) {
+    const option = document.createElement("option");
+    option.value = areaName;
+    option.textContent = areaName;
+    exportAreaEl.appendChild(option);
+  }
+
+  if (current && EXPORT_AREAS[current]) {
+    exportAreaEl.value = current;
+  }
+}
+
+if (menuBtn && sidebarEl) {
+  menuBtn.addEventListener("click", () => {
+    sidebarEl.classList.toggle("open");
+  });
+}
+
+if (toggleCreateBtn) toggleCreateBtn.addEventListener("click", toggleCreateMode);
+if (toggleMoveBtn) toggleMoveBtn.addEventListener("click", toggleMoveMode);
+if (createSeriesBtn) createSeriesBtn.addEventListener("click", createSeriesMarkers);
+if (loadBtn) loadBtn.addEventListener("click", loadMarkers);
+if (saveBtn) saveBtn.addEventListener("click", saveMarkers);
+if (clearBtn) clearBtn.addEventListener("click", clearMarkers);
+if (applyBtn) applyBtn.addEventListener("click", applyChanges);
+if (deleteBtn) deleteBtn.addEventListener("click", deleteSelectedMarker);
+if (markerFilterEl) markerFilterEl.addEventListener("input", renderMarkerList);
+if (exportPdfBtn) exportPdfBtn.addEventListener("click", exportPdf);
+
+if (exportJsonBtn) {
+  exportJsonBtn.addEventListener("click", exportJsonBackup);
+}
+
+if (importJsonBtn && importJsonInput) {
+  importJsonBtn.addEventListener("click", () => {
+    importJsonInput.click();
+  });
+
+  importJsonInput.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      importJsonBackup(file);
+    }
+    event.target.value = "";
+  });
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  installBtn.classList.remove("hidden");
+  if (installBtn) {
+    installBtn.classList.remove("hidden");
+  }
 });
 
-installBtn.addEventListener("click", async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  installBtn.classList.add("hidden");
-});
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/static/sw.js");
+if (installBtn) {
+  installBtn.addEventListener("click", async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    installBtn.classList.add("hidden");
   });
 }
 
-if (exportPdfBtn) {
-  exportPdfBtn.addEventListener("click", exportPdf);
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/static/sw.js").catch((error) => {
+      console.error("Service Worker konnte nicht registriert werden:", error);
+    });
+  });
 }
 
+populateExportAreas();
 setupMap();
-
-loadMarkers().catch((error) => {
-  console.error(error);
-  setStatus("Marker konnten nicht geladen werden.");
-});
+loadMarkers();
