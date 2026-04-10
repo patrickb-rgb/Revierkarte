@@ -1,7 +1,7 @@
 {
   "start_url": "./index.html",
   "scope": "./",
-  "display": "standalone",
+  "display": "fullscreen",
   "name": "Revierkarte",
   "short_name": "Revierkarte",
   "background_color": "#f5f6f8",
