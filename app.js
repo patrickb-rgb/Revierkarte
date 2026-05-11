@@ -319,7 +319,8 @@ function markerSvg(marker, selected = false) {
   const rectH = Math.max(8, Number(marker.rect_h) || 60);
   const fontSize = Math.max(10, Number(marker.font_size) || 30);
 
-  const symbolSize = Math.max(8, Number(marker.circle_size || marker.symbol_size) || 10);
+  const rawSize = Number(marker.circle_size || marker.symbol_size) || 24;
+  const symbolSize = Math.max(8, rawSize * 0.35);
 
   if (shape === "circle") {
     const size = symbolSize + outlineWidth * 2;
