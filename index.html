@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6feb">
+  <title>Revierkarte</title>
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+</head>
+<body>
+  <div class="floating-ui">
+    <button id="menuBtn" class="floating-btn" title="Marker-Einstellungen">☰</button>
+    <button id="floatingCreateBtn" class="floating-btn" title="Marker setzen">✚</button>
+    <button id="floatingMoveBtn" class="floating-btn" title="Marker bewegen">⇄</button>
+    <button id="floatingPdfBtn" class="floating-btn" title="PDF-Export">PDF</button>
+    <button id="floatingSeriesBtn" class="floating-btn" title="Serienmarker">#</button>
+    <button id="floatingBackupBtn" class="floating-btn" title="Backup">⤓</button>
+    <button id="floatingListBtn" class="floating-btn" title="Marker-Liste">≡</button>
+    <button id="floatingGpsBtn" class="floating-btn" title="Standort">◎</button>
+    <button id="installBtn" class="floating-btn hidden" title="Installieren">＋</button>
+  </div>
+
+  <main class="map-container">
+    <div id="map"></div>
+    <div class="source-note">Kartengrundlage: swisstopo</div>
+    <div id="statusBadge" class="status-badge">Bereit.</div>
+  </main>
+
+  <!-- Marker-Grundeinstellungen -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Neuer Marker</h2>
+        <button id="closeSettingsModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <label for="newText">Text</label>
+      <input id="newText" type="text" value="M1">
+
+      <div class="row-2">
+        <div>
+          <label for="newColor">Farbe</label>
+          <input id="newColor" type="color" value="#ff0000">
+        </div>
+        <div>
+          <label for="newShape">Form</label>
+          <select id="newShape">
+            <option value="rect">Rechteck</option>
+            <option value="circle">Kreis</option>
+            <option value="triangle">Dreieck</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="newFontSize">Schriftgröße</label>
+          <input id="newFontSize" type="number" min="6" max="72" value="30">
+        </div>
+        <div>
+          <label for="newSymbolSize">Symbolgröße</label>
+          <input id="newSymbolSize" type="number" min="10" max="300" value="24">
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="newWidth">Breite</label>
+          <input id="newWidth" type="number" min="10" max="300" value="120">
+        </div>
+        <div>
+          <label for="newHeight">Höhe</label>
+          <input id="newHeight" type="number" min="10" max="300" value="60">
+        </div>
+      </div>
+
+      <label for="newDescription">Beschreibung</label>
+      <textarea id="newDescription" rows="3" placeholder="Optionale Notiz"></textarea>
+    </div>
+  </div>
+
+  <!-- Serienmarker -->
+  <div id="seriesModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Serienmarker</h2>
+        <button id="closeSeriesModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <label for="seriesPrefix">Prefix</label>
+      <input id="seriesPrefix" type="text" value="M">
+
+      <div class="row-2">
+        <div>
+          <label for="seriesStart">Startnummer</label>
+          <input id="seriesStart" type="number" min="1" max="9999" value="1">
+        </div>
+        <div>
+          <label for="seriesEnd">Endnummer</label>
+          <input id="seriesEnd" type="number" min="1" max="9999" value="10">
+        </div>
+      </div>
+
+      <button id="createSeriesBtn">Serienmarker erzeugen</button>
+    </div>
+  </div>
+
+  <!-- Backup -->
+  <div id="backupModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Backup</h2>
+        <button id="closeBackupModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <div class="button-grid">
+        <button id="saveBtn">Marker speichern</button>
+        <button id="loadBtn">Marker laden</button>
+        <button id="exportJsonBtn">Marker exportieren</button>
+        <button id="importJsonBtn">Marker importieren</button>
+        <input id="importJsonInput" type="file" accept=".json,application/json" hidden>
+        <button id="clearBtn" class="danger">Alle löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Marker-Liste -->
+  <div id="listModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Marker-Liste</h2>
+        <button id="closeListModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <input id="markerFilter" type="text" placeholder="Suche...">
+      <div id="markerList" class="marker-list"></div>
+    </div>
+  </div>
+
+  <!-- PDF -->
+  <div id="pdfModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>PDF-Export</h2>
+        <button id="closePdfModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <label for="exportArea">Bereich</label>
+      <select id="exportArea">
+        <option value="Killwangen">Killwangen</option>
+        <option value="Remetschwil">Remetschwil</option>
+        <option value="Spreitenbach-Nord">Spreitenbach-Nord</option>
+        <option value="Spreitenbach-Süd">Spreitenbach-Süd</option>
+        <option value="Bellikon">Bellikon</option>
+        <option value="Bergdietikon-Nord">Bergdietikon-Nord</option>
+        <option value="Bergdietikon-Süd">Bergdietikon-Süd</option>
+        <option value="Revierkarte">Revierkarte</option>
+      </select>
+
+      <button id="exportPdfBtn">PDF exportieren</button>
+    </div>
+  </div>
+
+  <!-- Marker bearbeiten -->
+  <div id="editModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Marker bearbeiten</h2>
+        <button id="closeEditModalBtn" class="modal-close">✕</button>
+      </div>
+
+      <label for="editText">Text</label>
+      <input id="editText" type="text">
+
+      <div class="row-2">
+        <div>
+          <label for="editColor">Farbe</label>
+          <input id="editColor" type="color">
+        </div>
+        <div>
+          <label for="editShape">Form</label>
+          <select id="editShape">
+            <option value="rect">Rechteck</option>
+            <option value="circle">Kreis</option>
+            <option value="triangle">Dreieck</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="editFontSize">Schriftgröße</label>
+          <input id="editFontSize" type="number" min="6" max="72">
+        </div>
+        <div>
+          <label for="editSymbolSize">Symbolgröße</label>
+          <input id="editSymbolSize" type="number" min="10" max="300">
+        </div>
+      </div>
+
+      <div class="row-2">
+        <div>
+          <label for="editWidth">Breite</label>
+          <input id="editWidth" type="number" min="10" max="300">
+        </div>
+        <div>
+          <label for="editHeight">Höhe</label>
+          <input id="editHeight" type="number" min="10" max="300">
+        </div>
+      </div>
+
+      <label for="editEasting">LV95 Easting</label>
+      <input id="editEasting" type="number" step="0.01">
+
+      <label for="editNorthing">LV95 Northing</label>
+      <input id="editNorthing" type="number" step="0.01">
+
+      <label for="editDescription">Beschreibung</label>
+      <textarea id="editDescription" rows="3"></textarea>
+
+      <div class="button-grid">
+        <button id="applyBtn">Speichern</button>
+        <button id="deleteBtn" class="danger">Marker löschen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
