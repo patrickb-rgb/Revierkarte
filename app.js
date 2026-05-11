@@ -319,7 +319,7 @@ function markerSvg(marker, selected = false) {
   const rectH = Math.max(8, Number(marker.rect_h) || 60);
   const fontSize = Math.max(10, Number(marker.font_size) || 30);
 
-  const symbolSize = Math.max(8, Number(marker.circle_size || marker.symbol_size) || 24);
+  const symbolSize = Math.max(8, Number(marker.circle_size || marker.symbol_size) || 10);
 
   if (shape === "circle") {
     const size = symbolSize + outlineWidth * 2;
@@ -717,7 +717,7 @@ function createSeriesMarkers() {
       font_size: safeNumber(newFontSize?.value, 30),
       rect_w: safeNumber(newWidth?.value, 120),
       rect_h: safeNumber(newHeight?.value, 60),
-      circle_size: safeNumber(newSymbolSize?.value, 24),
+      circle_size: safeNumber(newSymbolSize?.value, 10),
       symbol_size: safeNumber(newSymbolSize?.value, 24),
       shape: newShape?.value || "rect",
       marker_type: markerType,
